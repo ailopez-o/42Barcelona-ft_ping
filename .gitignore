@@ -1,0 +1,21 @@
+# Binary
+ft_ping
+
+# Objects
+obj/
+*.o
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editors
+*.swp
+*.swo
+.vscode/
+.idea/
