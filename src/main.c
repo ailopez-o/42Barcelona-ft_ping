@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     
     // Setup socket
     g_ping.sockfd = create_raw_socket();
-    set_socket_options(g_ping.sockfd);
+    set_socket_options(g_ping.sockfd, &g_ping.args);
     
     // Setup signal handling
     setup_signals();

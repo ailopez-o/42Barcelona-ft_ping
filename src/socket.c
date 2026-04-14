@@ -13,17 +13,16 @@ int create_raw_socket(void) {
     return sockfd;
 }
 
-void set_socket_options(int sockfd) {
+void set_socket_options(int sockfd, t_ping_args *args) {
     struct timeval tv;
-    tv.tv_sec = 1; // 1 second timeout for receive
+    tv.tv_sec = args->linger;
     tv.tv_usec = 0;
 
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
         perror("setsockopt RCVTIMEO");
     }
 
-    int ttl = DEFAULT_TTL;
-    if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0) {
+    if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &args->ttl, sizeof(args->ttl)) < 0) {
         perror("setsockopt IP_TTL");
     }
 }

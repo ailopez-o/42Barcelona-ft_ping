@@ -19,38 +19,45 @@ unsigned short calculate_checksum(void *addr, int len) {
     return (unsigned short)(~sum);
 }
 
-void send_icmp_echo(int sockfd, struct sockaddr_in *dest_addr, int seq, pid_t pid) {
-    struct icmphdr icmp;
-    char packet[PACKET_SIZE];
-    
-    memset(&icmp, 0, sizeof(icmp));
-    icmp.type = ICMP_ECHO;
-    icmp.code = 0;
-    icmp.un.echo.id = htons(pid & 0xFFFF);
-    icmp.un.echo.sequence = htons(seq);
-    
-    memset(packet, 0, PACKET_SIZE);
-    memcpy(packet, &icmp, sizeof(icmp));
+void send_icmp_echo(int sockfd, struct sockaddr_in *dest_addr, int seq, pid_t pid, int payload_size) {
+    int packet_size = sizeof(struct icmphdr) + payload_size;
+    char *packet = malloc(packet_size);
+    if (!packet) {
+        perror("malloc");
+        return;
+    }
 
-    // Add timestamp to payload
-    double now = get_timestamp();
-    memcpy(packet + sizeof(icmp), &now, sizeof(double));
+    struct icmphdr *icmp = (struct icmphdr *)packet;
+    memset(packet, 0, packet_size);
+    
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->un.echo.id = htons(pid & 0xFFFF);
+    icmp->un.echo.sequence = htons(seq);
+    
+    // Add timestamp to payload if there's enough space
+    if (payload_size >= (int)sizeof(double)) {
+        double now = get_timestamp();
+        memcpy(packet + sizeof(struct icmphdr), &now, sizeof(double));
+    }
 
-    // Fill remaining payload with some data (optional padding)
-    for (int i = sizeof(icmp) + sizeof(double); i < PACKET_SIZE; i++) {
+    // Fill remaining payload with some data
+    int start_fill = sizeof(struct icmphdr) + (payload_size >= (int)sizeof(double) ? sizeof(double) : 0);
+    for (int i = start_fill; i < packet_size; i++) {
         packet[i] = i;
     }
 
-    // Calculate checksum over the whole packet
-    ((struct icmphdr *)packet)->checksum = calculate_checksum(packet, PACKET_SIZE);
+    // Calculate checksum
+    icmp->checksum = calculate_checksum(packet, packet_size);
 
-    if (sendto(sockfd, packet, PACKET_SIZE, 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr)) <= 0) {
+    if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr)) <= 0) {
         perror("sendto");
     }
+    free(packet);
 }
 
 int receive_icmp_reply(int sockfd, t_ping_stats *stats, int verbose, pid_t pid) {
-    char buffer[1024];
+    char buffer[65536]; // Max IP packet size
     struct sockaddr_in from;
     socklen_t from_len = sizeof(from);
     ssize_t bytes_recv;
@@ -76,23 +83,32 @@ int receive_icmp_reply(int sockfd, t_ping_stats *stats, int verbose, pid_t pid) 
 
     // Validate ID
     if (ntohs(icmp->un.echo.id) != (pid & 0xFFFF)) {
-        // Not our packet (maybe from another ping instance)
         return 0;
     }
 
     if (icmp->type == ICMP_ECHOREPLY) {
         double now = get_timestamp();
-        double sent_time;
-        memcpy(&sent_time, buffer + ip_hdr_len + sizeof(struct icmphdr), sizeof(double));
-
-        double rtt = now - sent_time;
-        update_stats(stats, rtt);
+        double rtt = -1.0;
+        
+        // Only calculate RTT if we have the timestamp in the payload
+        int icmp_payload_len = bytes_recv - ip_hdr_len - sizeof(struct icmphdr);
+        if (icmp_payload_len >= (int)sizeof(double)) {
+            double sent_time;
+            memcpy(&sent_time, buffer + ip_hdr_len + sizeof(struct icmphdr), sizeof(double));
+            rtt = now - sent_time;
+            update_stats(stats, rtt);
+        }
 
         char src_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(from.sin_addr), src_ip, INET_ADDRSTRLEN);
 
-        printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
-               (int)(bytes_recv - ip_hdr_len), src_ip, ntohs(icmp->un.echo.sequence), ip->ttl, rtt);
+        printf("%ld bytes from %s: icmp_seq=%d ttl=%d",
+               bytes_recv - ip_hdr_len, src_ip, ntohs(icmp->un.echo.sequence), ip->ttl);
+        if (rtt >= 0) {
+            printf(" time=%.2f ms\n", rtt);
+        } else {
+            printf("\n");
+        }
         return 1;
     } else {
         if (verbose) {

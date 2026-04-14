@@ -16,6 +16,7 @@
 # include <netdb.h>
 # include <math.h>
 # include <stdint.h>
+# include <getopt.h>
 
 # define PACKET_SIZE 64
 # define PAYLOAD_SIZE 56
@@ -69,6 +70,10 @@ typedef struct s_ping_args {
     char    *dest;
     int     verbose;
     int     help;
+    int     linger;       // -W (linger/timeout for reply)
+    int     deadline;     // -w (deadline for total execution)
+    int     payload_size; // -s (size of data)
+    int     ttl;          // --ttl (IP TTL)
 } t_ping_args;
 
 // Statistics
@@ -102,10 +107,10 @@ void    resolve_hostname(const char *hostname, struct sockaddr_in *addr, char *i
 
 // socket.c
 int     create_raw_socket(void);
-void    set_socket_options(int sockfd);
+void    set_socket_options(int sockfd, t_ping_args *args);
 
 // icmp.c
-void    send_icmp_echo(int sockfd, struct sockaddr_in *dest_addr, int seq, pid_t pid);
+void    send_icmp_echo(int sockfd, struct sockaddr_in *dest_addr, int seq, pid_t pid, int payload_size);
 int     receive_icmp_reply(int sockfd, t_ping_stats *stats, int verbose, pid_t pid);
 unsigned short calculate_checksum(void *addr, int len);
 
